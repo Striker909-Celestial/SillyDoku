@@ -46,7 +46,10 @@ string BoardIdentifier::to_string() const {
     for (int i = 0; i < board_size; i++) {
         auto const &row = board[i];
         for (int j = 0; j < row.size(); j++) {
-            out << row[j] << "  " << (j % box_size == box_size - 1 ? "  " : "");
+            int n = row[j];
+            if (n == 0) { out << "."; }
+            else { out << n; }
+            out << "  " << (j % box_size == box_size - 1 ? "  " : "");
         }
         out << "\n" << (i % box_size == box_size - 1 ? "\n" : "");
     }
@@ -59,15 +62,20 @@ string Square::telemetry_string{};
 Square::Square(const int &value, const int x, const int y) : x(x), y(y) {
     possibilities.insert(value);
     saved_value = value;
-    this->neighborhood = []() -> std::set<int> { return {}; };
+    this->neighborhood = []() -> std::unordered_set<int> { return {}; };
 }
 
-Square::Square(const std::vector<int> &possibilities, const std::function<std::set<int>()> &neighborhood_fetcher, const int x, const int y) : x(x), y(y) {
+Square::Square(const std::vector<int> &possibilities, const std::function<std::unordered_set<int>()> &neighborhood_fetcher, const int x, const int y) : x(x), y(y) {
     for (int i: possibilities) { this->possibilities.insert(i); }
     this->neighborhood = neighborhood_fetcher;
 }
 
-std::set<int> Square::get_possibilities() {
+Square::Square(const std::unordered_set<int> &possibilities, const std::function<std::unordered_set<int>()> &neighborhood_fetcher, const int x, const int y) : x(x), y(y) {
+    this->possibilities = possibilities;
+    this->neighborhood = neighborhood_fetcher;
+}
+
+std::unordered_set<int> Square::get_possibilities() {
     return possibilities;
 }
 
@@ -110,10 +118,6 @@ void Square::set(int value) {
     possibilities.insert(value);
 }
 
-SudokuBoard::SudokuBoard(const int &max_value, const int &box_size, const std::vector<std::vector<int> > &raw_board, const std::vector<std::vector<Square>> &possibility_board) :
-    max_value(max_value), box_size(box_size),
-    raw_board(raw_board), possibility_board(possibility_board) {}
-
 SudokuBoard::SudokuBoard(const vector<vector<int>>& board) {
     max_value = static_cast<int>(board.size());
     box_size = static_cast<int>(sqrt(max_value));
@@ -122,76 +126,97 @@ SudokuBoard::SudokuBoard(const vector<vector<int>>& board) {
     this->generate_possibility_board();
 }
 
+SudokuBoard::SudokuBoard(const std::vector<std::vector<std::unordered_set<int>>> &board) {
+    max_value = static_cast<int>(board.size());
+    box_size = static_cast<int>(sqrt(max_value));
+    this->raw_board = vector<vector<int>>();
+    for (const auto& row : board) {
+        this->raw_board.emplace_back();
+        for (const auto& square : row) {
+            this->raw_board.back().emplace_back(square.size() > 1 ? 0 : *square.begin());
+        }
+    }
+    this->possibility_board = vector<vector<Square>>();
+    this->generate_from_raw_possibility_board(board);
+}
+
 void SudokuBoard::generate_possibility_board() {
+    unordered_set<int> possible_values;
+    for (int i = 1; i <= max_value; i++) { possible_values.insert(i); }
+
+    std::vector<std::vector<std::unordered_set<int>>> raw_possibility_board;
+    for (int i = 0; i < max_value; i++) {
+        raw_possibility_board.emplace_back();
+        for (int j = 0; j < max_value; j++) {
+            int n = raw_board[i][j];
+            if (n != 0) { raw_possibility_board[i].emplace_back(unordered_set<int>({n})); continue;}
+            raw_possibility_board[i].emplace_back(possible_values);
+        }
+    }
+
+    this->generate_from_raw_possibility_board(raw_possibility_board);
+}
+
+void SudokuBoard::generate_from_raw_possibility_board(const std::vector<std::vector<std::unordered_set<int>>> &board) {
     this->possibility_board.clear();
-        vector<int> possible_values;
-        for (int i = 1; i <= max_value; i++) { possible_values.push_back(i); }
 
-        function<set<int>(int x, int y)> rows[max_value];
-        function<set<int>(int x, int y)> columns[max_value];
-        function<set<int>(int x, int y)> boxes[max_value];
+    function<unordered_set<int>(int x, int y)> rows[max_value];
+    function<unordered_set<int>(int x, int y)> columns[max_value];
+    function<unordered_set<int>(int x, int y)> boxes[max_value];
 
-        for (int i = 0; i < max_value; i++) {
-            rows[i] = [i, this](int x, int y) -> set<int> {
-                set<int> neighborhood = {};
-                for (int j = 0; j < max_value; j++) {
-                    if (j == x && i == y) { continue; }
-                    neighborhood.insert(this->possibility_board[i][j].value());
-                }
-                 return neighborhood;
-            };
-
-            columns[i] = [i, this](int x, int y) -> set<int> {
-                set<int> neighborhood = {};
-                for (int j = 0; j < max_value; j++) {
-                    if (i == x && j == y) { continue; }
-                    neighborhood.insert(this->possibility_board[j][i].value());
-                }
-                return neighborhood;
-            };
-
-            int box_x = i % box_size * box_size;
-            int box_y = i / box_size * box_size;
-            boxes[i] = [box_x, box_y, this](int x, int y) -> set<int> {
-                set<int> neighborhood = {};
-                for (int y_ = box_y; y_ < box_y + this->box_size; y_++) {
-                    for (int x_ = box_x; x_ < box_x + this->box_size; x_++) {
-                        if (x_ == x || y_ == y) { continue; }
-                        neighborhood.insert(this->possibility_board[y_][x_].value());
-                    }
-                }
-                return neighborhood;
-            };
-        }
-
-        for (int y = 0; y < max_value; y++) {
-            this->possibility_board.emplace_back();
-            for (int x = 0; x < max_value; x++) {
-
-                int n = raw_board[y][x];
-                if (n != 0) {
-                    Square square = Square(raw_board[y][x], x, y);
-                    this->possibility_board[y].emplace_back(square);
-                    continue;
-                }
-
-                auto row_neighborhood = rows[y];
-                auto column_neighborhood = columns[x];
-                int box_i = (y / 3 * 3) + (x / 3);
-                auto box_neighborhood = boxes[box_i];
-
-                auto neighborhood = [row_neighborhood, column_neighborhood, box_neighborhood, x, y]() -> set<int> {
-                    set<int> neighbors = {};
-                    neighbors.merge(row_neighborhood(x, y));
-                    neighbors.merge(column_neighborhood(x, y));
-                    neighbors.merge(box_neighborhood(x, y));
-                    return neighbors;
-                };
-
-                Square square = Square(possible_values, neighborhood, x, y);
-                this->possibility_board[y].emplace_back(square);
+    for (int i = 0; i < max_value; i++) {
+        rows[i] = [i, this](int x, int y) -> unordered_set<int> {
+            unordered_set<int> neighborhood = {};
+            for (int j = 0; j < max_value; j++) {
+                if (j == x && i == y) { continue; }
+                neighborhood.insert(this->possibility_board[i][j].value());
             }
+            return neighborhood;
+        };
+
+        columns[i] = [i, this](int x, int y) -> unordered_set<int> {
+            unordered_set<int> neighborhood = {};
+            for (int j = 0; j < max_value; j++) {
+                if (i == x && j == y) { continue; }
+                neighborhood.insert(this->possibility_board[j][i].value());
+            }
+            return neighborhood;
+        };
+
+        int box_x = i % box_size * box_size;
+        int box_y = i / box_size * box_size;
+        boxes[i] = [box_x, box_y, this](int x, int y) -> unordered_set<int> {
+            unordered_set<int> neighborhood = {};
+            for (int y_ = box_y; y_ < box_y + this->box_size; y_++) {
+                for (int x_ = box_x; x_ < box_x + this->box_size; x_++) {
+                    if (x_ == x || y_ == y) { continue; }
+                    neighborhood.insert(this->possibility_board[y_][x_].value());
+                }
+            }
+            return neighborhood;
+        };
+    }
+
+    for (int y = 0; y < max_value; y++) {
+        this->possibility_board.emplace_back();
+        for (int x = 0; x < max_value; x++) {
+
+            auto row_neighborhood = rows[y];
+            auto column_neighborhood = columns[x];
+            int box_i = (y / 3 * 3) + (x / 3);
+            auto box_neighborhood = boxes[box_i];
+
+            auto neighborhood = [row_neighborhood, column_neighborhood, box_neighborhood, x, y]() -> unordered_set<int> {
+                unordered_set<int> neighbors = {};
+                neighbors.merge(row_neighborhood(x, y));
+                neighbors.merge(column_neighborhood(x, y));
+                neighbors.merge(box_neighborhood(x, y));
+                return neighbors;
+            };
+            Square square = Square(board[y][x], neighborhood, x, y);
+            this->possibility_board[y].emplace_back(square);
         }
+    }
 }
 
 void SudokuBoard::update_board() {
@@ -202,7 +227,18 @@ void SudokuBoard::update_board() {
     }
 }
 
-std::pair<std::pair<int, int>, std::set<int>> SudokuBoard::find_minimum_possibilities() {
+std::vector<std::vector<std::unordered_set<int>>> SudokuBoard::get_possibility_board() {
+    std::vector<std::vector<std::unordered_set<int>>> board;
+    for (const auto& row : possibility_board) {
+        board.emplace_back();
+        for (auto square : row) {
+            board.back().emplace_back(square.get_possibilities());
+        }
+    }
+    return board;
+}
+
+std::pair<std::pair<int, int>, std::unordered_set<int>> SudokuBoard::find_minimum_possibilities() {
     int num = max_value; int x = 0; int y = 0;
     for (int i = 0; i < max_value; i++) {
         for (int j = 0; j < max_value; j++) {
@@ -232,10 +268,6 @@ vector<vector<int>> SudokuBoard::extract_board_from_possibilities() {
 
 BoardIdentifier SudokuBoard::generate_board_identifier() {
     return BoardIdentifier(this->extract_board_from_possibilities());
-}
-
-SudokuBoard SudokuBoard::deep_copy() {
-    return SudokuBoard(this->max_value, this->box_size, this->raw_board, this->possibility_board);
 }
 
 void SudokuBoard::set_square(const int x, const int y, const int value) {

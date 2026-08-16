@@ -24,7 +24,6 @@ BoardIdentifier Solver::solve(const BoardIdentifier &board) {
 SudokuBoard* Solver::solve(SudokuBoard *board) {
     auto id = board->generate_board_identifier();
     if (this->board_database.contains(id)) { return this->board_database[id]; }
-
     if (id.complete) {
         this->board_database[id] = board;
         return board;
@@ -40,7 +39,7 @@ SudokuBoard* Solver::solve(SudokuBoard *board) {
     auto possibilities = fork_target.second;
 
     for (auto possibility : possibilities) {
-        auto copy = new SudokuBoard(id.board);
+        auto copy = new SudokuBoard(board->get_possibility_board());
         copy->set_square(x, y, possibility);
         auto out = this->solve(copy);
         if (out != nullptr) {

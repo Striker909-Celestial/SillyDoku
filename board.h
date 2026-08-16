@@ -5,8 +5,9 @@
 #ifndef SUDOKU_BOARD_H
 #define SUDOKU_BOARD_H
 
+#include <format>
 #include <functional>
-#include <set>
+#include <unordered_set>
 #include <vector>
 
 struct BoardIdentifier {
@@ -47,13 +48,13 @@ struct std::hash<BoardIdentifier> {
 
 /// Represents an individual square in a sudoku board with a number of possible values.
 class Square {
-    static constexpr int MAX_UPDATE_DEPTH = 3;
+    static constexpr int MAX_UPDATE_DEPTH = 2;
     static std::string telemetry_string;
     static int depth;
 
     const int x; const int y;
-    std::set<int> possibilities;
-    std::function<std::set<int>()> neighborhood;
+    std::unordered_set<int> possibilities;
+    std::function<std::unordered_set<int>()> neighborhood;
     bool updating = false;
     int saved_value = 0;
 
@@ -68,9 +69,15 @@ public:
     /// @param neighborhood_fetcher A supplier for a set of all values that are in the same row, column, or box as this square.
     /// @param x The column this square occupies, with the left-most column being 0.
     /// @param y The row this square occupies, with the top-most row being 0.
-    explicit Square(const std::vector<int> & possibilities, const std::function<std::set<int>()> &neighborhood_fetcher, int x, int y);
+    explicit Square(const std::vector<int> & possibilities, const std::function<std::unordered_set<int>()> &neighborhood_fetcher, int x, int y);
+    /// Represents an individual square in a sudoku board with a number of possible values.
+    /// @param possibilities An unordered set of all possible values this square could have.
+    /// @param neighborhood_fetcher A supplier for a set of all values that are in the same row, column, or box as this square.
+    /// @param x The column this square occupies, with the left-most column being 0.
+    /// @param y The row this square occupies, with the top-most row being 0.
+    explicit Square(const std::unordered_set<int> & possibilities, const std::function<std::unordered_set<int>()> &neighborhood_fetcher, int x, int y);
 
-    std::set<int> get_possibilities();
+    std::unordered_set<int> get_possibilities();
 
     /// Updates the possible values for this square based on the values present in the same row, column, or box as this square.
     ///
@@ -89,25 +96,28 @@ class SudokuBoard {
     std::vector<std::vector<int>> raw_board;
     std::vector<std::vector<Square>> possibility_board;
 
-    explicit SudokuBoard(const int & max_value, const int & box_size, const std::vector<std::vector<int>> & raw_board, const std::vector<std::vector<Square>> & possibility_board);
-
     void generate_possibility_board();
+
+    void generate_from_raw_possibility_board(const std::vector<std::vector<std::unordered_set<int>>> &board);
 
 public:
     explicit SudokuBoard(
         const std::vector<std::vector<int>>& board);
 
+    explicit SudokuBoard(
+        const std::vector<std::vector<std::unordered_set<int>>>& board);
+
     void update_board();
+
+    std::vector<std::vector<std::unordered_set<int>>> get_possibility_board();
 
     std::vector<std::vector<int>>
         extract_board_from_possibilities();
 
-    std::pair<std::pair<int, int>, std::set<int>>
+    std::pair<std::pair<int, int>, std::unordered_set<int>>
         find_minimum_possibilities();
 
     BoardIdentifier generate_board_identifier();
-
-    SudokuBoard deep_copy();
 
     void set_square(int x, int y, int value);
 

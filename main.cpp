@@ -117,7 +117,7 @@ int main() {
         vector({0, 0, 0, 0, 0, 0, 0, 0, 0})
     });
 
-    BoardIdentifier board = BoardIdentifier(blank_board);
+    BoardIdentifier board = BoardIdentifier(nyt_hard_board);
 
     Solver solver = Solver();
     BoardIdentifier board_out = solver.solve(board);
